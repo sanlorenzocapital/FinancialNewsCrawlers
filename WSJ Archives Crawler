@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun  8 22:36:46 2021
+
+@author: kim
+"""
+'''
+https://medium.com/@igorzabukovec/automate-web-crawling-with-selenium-python-part-1-85113660de96
+'''
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from datetime import date
+import time #add delay to getting response from web driver so that unnecessary error messages are avoided
+from docx import Document
+from docx.shared import Pt
+import itertools
+
+today = date.today()
+date = today.strftime("%d/%m/%Y")
+
+#Set up basic chrome options, run chrome driver
+chrome_options = Options()
+chrome_options.add_argument("--incognito")
+chrome_options.add_argument("--window-size = 1920x1080")
+driver = webdriver.Chrome(chrome_options = chrome_options, executable_path="/Users/kim/Desktop/chromedriver")
+
+
+#Log In
+url = "https://accounts.wsj.com/login?target=https%3A%2F%2Fwww.wsj.com%2F"
+driver.get(url)
+time.sleep(2.5)
+username = driver.find_element_by_id("username")
+password = driver.find_element_by_id("password")
+username.send_keys(str(input()))
+password.send_keys(str(input()))
+signin = driver.find_element_by_css_selector(".basic-login-submit")
+signin.click()
+time.sleep(2.5)
+
+
+#Enter keywords
+keywords = str(input("What is your keyword?")).split()
+expanded_keywords = keywords + str(input("What are your other expanded keywords (not strictly necessary)?")).split()
+
+#Create Document
+document = Document()
+run = document.add_paragraph().add_run()
+font = run.font
+font.name = "Arial"
+font.size = Pt(12)
+document.add_heading(f"WSJ articles including {keywords} until {date}",0)
+
+#Move to WSJ Archives
+driver.get("https://www.wsj.com/news/archive/years")
+years = driver.find_elements_by_class_name("WSJTheme--year-contain--ChIUCO3R ")
+
+for i in years[:1]:
+    
+    #Finding the month tags
+    months = i.find_elements_by_class_name("WSJTheme--month-link--1N8tTFWa ")
+    month_links = []
+    for i in months:
+        q = i.get_attribute("href")
+        month_links.append(q)
+    for j in month_links:
+        
+        #Going into each month now
+        driver.get(j)
+        
+        #Finding the day tags
+        days = driver.find_elements_by_class_name("WSJTheme--day-link--19pByDpZ ")
+        day_links = []
+        for k in days:
+            t = k.get_attribute("href")
+            day_links.append(t)
+        for k in day_links:
+            driver.get(k)
+            articles = driver.find_elements_by_class_name("WSJTheme--headline--7VCzo7Ay ")
+                
+            #Create dictionary of article title:link pairs
+            d = {}
+            titles = []
+            links = []
+            for article in articles:
+                title = article.find_element_by_tag_name("span").text
+                titles.append(title)
+                link = article.find_element_by_tag_name("a").get_attribute("href")
+                links.append(link)
+                d[title] = link
+            
+            #Return a condensed dictionary of article title:link pairs by if either keyword is present in title 
+            condensed_dict = {}
+            condensed_titles = []
+            for title in titles:
+                interim_title = title.lower().split()
+                counter = 0
+                for word in expanded_keywords:
+                    if word in interim_title:
+                        condensed_dict[title] = d[title]
+                        condensed_titles.append(title)
+                        break
+                    
+            #Getting into the articles now
+            article_words = []
+            for title in condensed_titles:
+                try:
+                    url = d[title]
+                    driver.get(url)
+                    time.sleep(1)
+                    
+                    try:
+                        timestamp = driver.find_elements_by_tag_name("time")[0].text
+                    except Exception:
+                        pass
+                    
+                    try:
+                        paragraphs = driver.find_elements_by_tag_name("p")
+                    except Exception:
+                        paragraphs = driver.find_elements_by_tag_name("p")
+                    except Exception:
+                        paragraphs = driver.find_elements_by_tag_name("p")
+                        pass
+                    
+                    for i in paragraphs:
+                        paragraph = i.text
+                        paragraph_words = i.text.split()
+                        article_words.append(paragraph_words)
+                    article_words = list(itertools.chain.from_iterable(article_words))
+                    
+                    counter = 0
+                    for i in keywords:
+                        if i in article_words:
+                            counter += 1
+                            
+                    if counter == len(keywords):
+                        p = document.add_paragraph()
+                        p.add_run(f"{title}").bold = True
+                        p.add_run().font.name = "Arial"
+                        p.add_run().font.size = Pt(14)
+                        p = document.add_paragraph()
+                        p.add_run(f"{url}").italic = True
+                        p.add_run().font.name = "Arial"
+                        p.add_run().font.size = Pt(12)
+                        p = document.add_paragraph(f"{timestamp}")
+                        p.add_run().font.name = "Arial"
+                        p.add_run().font.size = Pt(12)
+                        for i in paragraphs:
+                            paragraph = i.text
+                            if paragraph != "":
+                                document.add_paragraph(f"{paragraph}")
+                                p.add_run().font.name = "Arial"
+                                p.add_run().font.size = Pt(12)
+                                break
+                            else:
+                                pass
+                except Exception as e:
+                    print(e)
+
+document.save(r"/Users/kim/Desktop/WSJ.docx")
+
+'''Discontinued due to inaccuracy
+import nltk
+from nltk.collocations import *
+from textblob import TextBlob
+
+#Find most commmon n-grams / collocations within text file (i.e. prevailing narratives)
+bigram_measures = nltk.collocations.BigramAssocMeasures()
+trigram_measures = nltk.collocations.TrigramAssocMeasures()
+
+
+# Bigrams
+finder = BigramCollocationFinder.from_words(x)
+
+# only bigrams that appear 3+ times
+finder.apply_freq_filter(3)
+
+# return the 10 bigrams with the highest PMI
+bigrams = finder.nbest(bigram_measures.pmi, 10)
+
+# For trigrams
+finder2 = TrigramCollocationFinder.from_words(corpus)
+
+# only trigrams that appear 3+ times
+finder2.apply_freq_filter(3)
+
+# return the 10 trigrams with the highest PMI
+trigrams = finder2.nbest(igram_measures.pmi, 10)
+
+print(bigrams)
+print(trigrams)
+'''
+
+
